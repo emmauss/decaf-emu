@@ -208,6 +208,18 @@
     <Filter Include="Header Files\modules\dmae">
       <UniqueIdentifier>{186d1ad5-6eb6-42b7-8707-cb2c370ee42c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\modules\nn_aoc">
+      <UniqueIdentifier>{6c86710f-c0d7-4841-8106-3dc363a554fe}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\modules\nn_aoc">
+      <UniqueIdentifier>{c173d3bc-adf7-4a85-bbe0-94e69ca110dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\modules\camera">
+      <UniqueIdentifier>{23db009c-cc24-46a8-97dd-cfbb2d4fecb7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\modules\camera">
+      <UniqueIdentifier>{2a41d538-968a-46b6-b2d5-76ea16c764e8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\libdecaf\src\modules\coreinit\coreinit.cpp">
@@ -885,6 +897,24 @@
     <ClCompile Include="..\src\libdecaf\src\gpu\gpu_commandqueue.cpp">
       <Filter>Source Files\gpu</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\gpu\pm4_capture.cpp">
+      <Filter>Source Files\gpu</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\decaf_pm4replay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\modules\nn_aoc\nn_aoc.cpp">
+      <Filter>Source Files\modules\nn_aoc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\modules\nn_aoc\nn_aoc_core.cpp">
+      <Filter>Source Files\modules\nn_aoc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\modules\camera\camera.cpp">
+      <Filter>Source Files\modules\camera</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libdecaf\src\modules\camera\camera_core.cpp">
+      <Filter>Source Files\modules\camera</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\libdecaf\src\modules\coreinit\coreinit.h">
@@ -1125,9 +1155,6 @@
       <Filter>Header Files\modules\coreinit</Filter>
     </ClInclude>
     <ClInclude Include="..\src\libdecaf\src\gpu\gfd.h">
-      <Filter>Header Files\gpu</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\libdecaf\src\gpu\pm4.h">
       <Filter>Header Files\gpu</Filter>
     </ClInclude>
     <ClInclude Include="..\src\libdecaf\src\modules\gx2\gx2_registers.h">
@@ -1681,6 +1708,33 @@
     </ClInclude>
     <ClInclude Include="..\src\libdecaf\src\gpu\gpu_flush.h">
       <Filter>Header Files\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\pm4_capture.h">
+      <Filter>Header Files\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\gpu\pm4_packets.h">
+      <Filter>Header Files\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\decaf_pm4replay.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\modules\nn_aoc\nn_aoc.h">
+      <Filter>Header Files\modules\nn_aoc</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\modules\nn_aoc\nn_aoc_enum.h">
+      <Filter>Header Files\modules\nn_aoc</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\modules\nn_aoc\nn_aoc_core.h">
+      <Filter>Header Files\modules\nn_aoc</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\modules\nn_nfp\nn_nfp_enum.h">
+      <Filter>Header Files\modules\nn_nfp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\modules\camera\camera.h">
+      <Filter>Header Files\modules\camera</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libdecaf\src\modules\camera\camera_core.h">
+      <Filter>Header Files\modules\camera</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

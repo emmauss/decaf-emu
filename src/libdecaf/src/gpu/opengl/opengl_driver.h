@@ -1,17 +1,18 @@
 #pragma once
-#include "common/platform.h"
 #include "common/log.h"
+#include "common/platform.h"
 #include "glsl2_translate.h"
-#include "gpu/pm4.h"
 #include "gpu/latte_constants.h"
 #include "gpu/latte_contextstate.h"
 #include "gpu/pm4_buffer.h"
+#include "gpu/pm4_packets.h"
 #include "libdecaf/decaf_graphics.h"
 #include <chrono>
 #include <condition_variable>
 #include <exception>
 #include <glbinding/gl/gl.h>
 #include <gsl.h>
+#include <list>
 #include <map>
 #include <mutex>
 #include <queue>
@@ -276,6 +277,16 @@ struct GLStateCache
    gl::GLuint primRestartIndex;
 };
 
+struct RemoteThreadTask
+{
+   std::function<void()> func;
+   std::condition_variable completionCV;
+
+   RemoteThreadTask(std::function<void()> func) : func(func)
+   {
+   }
+};
+
 using GLContext = uint64_t;
 
 class GLDriver : public decaf::OpenGLDriver
@@ -355,6 +366,7 @@ private:
                  uint32_t width,
                  uint32_t height,
                  uint32_t depth,
+                 uint32_t samples,
                  latte::SQ_TEX_DIM dim,
                  latte::SQ_DATA_FORMAT format,
                  latte::SQ_NUM_FORMAT numFormat,
@@ -369,6 +381,7 @@ private:
                     uint32_t width,
                     uint32_t height,
                     uint32_t depth,
+                    uint32_t samples,
                     latte::SQ_TEX_DIM dim,
                     latte::SQ_DATA_FORMAT format,
                     latte::SQ_NUM_FORMAT numFormat,
@@ -407,6 +420,7 @@ private:
    bool checkActiveShader();
    bool checkActiveTextures();
    bool checkActiveUniforms();
+   bool checkAttribBuffersBound();
    bool checkViewport();
 
    DataBuffer *
@@ -440,6 +454,9 @@ private:
    void checkSyncObjects();
 
    void runCommandBuffer(uint32_t *buffer, uint32_t size);
+
+   void runOnGLThread(std::function<void()> func);
+   void runRemoteThreadTasks();
 
    template<typename Type>
    Type getRegister(uint32_t id)
@@ -526,6 +543,9 @@ private:
    using duration_ms = std::chrono::duration<double, std::chrono::milliseconds::period>;
    std::chrono::time_point<std::chrono::system_clock> mLastSwap;
    duration_system_clock mAverageFrameTime;
+
+   std::mutex mTaskListMutex;  // Protects mTaskList
+   std::list<RemoteThreadTask> mTaskList;
 
 #ifdef PLATFORM_WINDOWS
    uint64_t mDeviceContext = 0;

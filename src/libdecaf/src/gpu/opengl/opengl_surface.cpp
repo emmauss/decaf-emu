@@ -366,6 +366,10 @@ getGlTarget(latte::SQ_TEX_DIM dim)
       return gl::GL_TEXTURE_1D;
    case latte::SQ_TEX_DIM_2D:
       return gl::GL_TEXTURE_2D;
+   case latte::SQ_TEX_DIM_2D_MSAA:
+      return gl::GL_TEXTURE_2D_MULTISAMPLE;
+   case latte::SQ_TEX_DIM_2D_ARRAY_MSAA:
+      return gl::GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
    case latte::SQ_TEX_DIM_2D_ARRAY:
       return gl::GL_TEXTURE_2D_ARRAY;
    case latte::SQ_TEX_DIM_CUBEMAP:
@@ -385,6 +389,7 @@ createHostSurface(ppcaddr_t baseAddress,
                   uint32_t width,
                   uint32_t height,
                   uint32_t depth,
+                  uint32_t samples,
                   latte::SQ_TEX_DIM dim,
                   latte::SQ_DATA_FORMAT format,
                   latte::SQ_NUM_FORMAT numFormat,
@@ -414,6 +419,10 @@ createHostSurface(ppcaddr_t baseAddress,
       break;
    case latte::SQ_TEX_DIM_2D:
       gl::glTextureStorage2D(newSurface->object, 1, storageFormat, width, height);
+      break;
+   case latte::SQ_TEX_DIM_2D_MSAA:
+      // TODO: Figure out if last parameter should be GL_TRUE or GL_FALSE
+      gl::glTextureStorage2DMultisample(newSurface->object, samples, storageFormat, width, height, gl::GL_FALSE);
       break;
    case latte::SQ_TEX_DIM_2D_ARRAY:
       gl::glTextureStorage3D(newSurface->object, 1, storageFormat, width, height, depth);
@@ -464,6 +473,7 @@ static uint32_t
 getSurfaceBytes(uint32_t pitch,
                 uint32_t height,
                 uint32_t depth,
+                uint32_t samples,
                 latte::SQ_TEX_DIM dim,
                 latte::SQ_DATA_FORMAT format)
 {
@@ -475,6 +485,9 @@ getSurfaceBytes(uint32_t pitch,
       break;
    case latte::SQ_TEX_DIM_2D:
       numPixels = pitch * height;
+      break;
+   case latte::SQ_TEX_DIM_2D_MSAA:
+      numPixels = pitch * height * samples;
       break;
    case latte::SQ_TEX_DIM_2D_ARRAY:
       numPixels = pitch * height * depth;
@@ -502,30 +515,31 @@ getSurfaceBytes(uint32_t pitch,
 
 void
 GLDriver::uploadSurface(SurfaceBuffer *buffer,
-   ppcaddr_t baseAddress,
-   uint32_t swizzle,
-   uint32_t pitch,
-   uint32_t width,
-   uint32_t height,
-   uint32_t depth,
-   latte::SQ_TEX_DIM dim,
-   latte::SQ_DATA_FORMAT format,
-   latte::SQ_NUM_FORMAT numFormat,
-   latte::SQ_FORMAT_COMP formatComp,
-   uint32_t degamma,
-   bool isDepthBuffer,
-   latte::SQ_TILE_MODE tileMode)
+                        ppcaddr_t baseAddress,
+                        uint32_t swizzle,
+                        uint32_t pitch,
+                        uint32_t width,
+                        uint32_t height,
+                        uint32_t depth,
+                        uint32_t samples,
+                        latte::SQ_TEX_DIM dim,
+                        latte::SQ_DATA_FORMAT format,
+                        latte::SQ_NUM_FORMAT numFormat,
+                        latte::SQ_FORMAT_COMP formatComp,
+                        uint32_t degamma,
+                        bool isDepthBuffer,
+                        latte::SQ_TILE_MODE tileMode)
 {
    auto imagePtr = make_virtual_ptr<uint8_t>(baseAddress);
-
    auto bpp = getDataFormatBitsPerElement(format);
-
    auto srcWidth = width;
    auto srcHeight = height;
    auto srcPitch = pitch;
    auto uploadWidth = width;
    auto uploadHeight = height;
    auto uploadPitch = width;
+   auto uploadDepth = depth;
+
    if (format >= latte::FMT_BC1 && format <= latte::FMT_BC5) {
       srcWidth = (srcWidth + 3) / 4;
       srcHeight = (srcHeight + 3) / 4;
@@ -535,7 +549,6 @@ GLDriver::uploadSurface(SurfaceBuffer *buffer,
       uploadPitch = uploadWidth / 4;
    }
 
-   auto uploadDepth = depth;
    if (dim == latte::SQ_TEX_DIM_CUBEMAP) {
       uploadDepth *= 6;
    }
@@ -683,6 +696,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
                            uint32_t width,
                            uint32_t height,
                            uint32_t depth,
+                           uint32_t samples,
                            latte::SQ_TEX_DIM dim,
                            latte::SQ_DATA_FORMAT format,
                            latte::SQ_NUM_FORMAT numFormat,
@@ -702,7 +716,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
    decaf_check(!(!forWrite && discardData));  // Nonsensical combination
 
    // Grab the swizzle from this...
-   uint32_t swizzle = baseAddress & 0xFFF;
+   auto swizzle = baseAddress & 0xFFF;
 
    // Align the base address according to the GPU logic
    if (tileMode >= latte::SQ_TILE_MODE_TILED_2D_THIN1) {
@@ -747,7 +761,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
       buffer.active->isDepthBuffer == isDepthBuffer)
    {
       if (!forWrite && buffer.needUpload) {
-         uploadSurface(&buffer, baseAddress, swizzle, pitch, width, height, depth, dim, format, numFormat, formatComp, degamma, isDepthBuffer, tileMode);
+         uploadSurface(&buffer, baseAddress, swizzle, pitch, width, height, depth, samples, dim, format, numFormat, formatComp, degamma, isDepthBuffer, tileMode);
          buffer.needUpload = false;
       }
 
@@ -767,14 +781,14 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
 
       // The memory bounds
       buffer.cpuMemStart = baseAddress;
-      buffer.cpuMemEnd = baseAddress + getSurfaceBytes(pitch, height, depth, dim, format);
+      buffer.cpuMemEnd = baseAddress + getSurfaceBytes(pitch, height, depth, samples, dim, format);
 
-      auto newSurf = createHostSurface(baseAddress, pitch, width, height, depth, dim, format, numFormat, formatComp, degamma, isDepthBuffer);
+      auto newSurf = createHostSurface(baseAddress, pitch, width, height, depth, samples, dim, format, numFormat, formatComp, degamma, isDepthBuffer);
       buffer.active = newSurf;
       buffer.master = newSurf;
 
       if (!forWrite) {
-         uploadSurface(&buffer, baseAddress, swizzle, pitch, width, height, depth, dim, format, numFormat, formatComp, degamma, isDepthBuffer, tileMode);
+         uploadSurface(&buffer, baseAddress, swizzle, pitch, width, height, depth, samples, dim, format, numFormat, formatComp, degamma, isDepthBuffer, tileMode);
          buffer.needUpload = false;
       }
 
@@ -787,7 +801,6 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
 
    if (!foundSurface) {
       // First lets check to see if we already have a surface created
-
       for (auto surf = buffer.master; surf != nullptr; surf = surf->next) {
          if (surf->width == width &&
             surf->height == height &&
@@ -802,10 +815,10 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
 
    if (!foundSurface) {
       // Lets check if we need to build a new master surface
-
       auto masterWidth = width;
       auto masterHeight = height;
       auto masterDepth = depth;
+
       if (buffer.master) {
          masterWidth = std::max(masterWidth, buffer.master->width);
          masterHeight = std::max(masterHeight, buffer.master->height);
@@ -813,7 +826,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
       }
 
       if (!buffer.master || buffer.master->width < masterWidth || buffer.master->height < masterHeight || buffer.master->depth < masterDepth) {
-         newMaster = createHostSurface(baseAddress, pitch, masterWidth, masterHeight, masterDepth, dim, format, numFormat, formatComp, degamma, isDepthBuffer);
+         newMaster = createHostSurface(baseAddress, pitch, masterWidth, masterHeight, masterDepth, samples, dim, format, numFormat, formatComp, degamma, isDepthBuffer);
 
          // Check if the new master we just made matches our size perfectly.
          if (width == masterWidth && height == masterHeight && depth == masterDepth) {
@@ -824,7 +837,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
 
    if (!foundSurface) {
       // Lets finally just build our perfect surface...
-      foundSurface = createHostSurface(baseAddress, pitch, width, height, depth, dim, format, numFormat, formatComp, degamma, isDepthBuffer);
+      foundSurface = createHostSurface(baseAddress, pitch, width, height, depth, samples, dim, format, numFormat, formatComp, degamma, isDepthBuffer);
       newSurface = foundSurface;
    }
 
@@ -834,6 +847,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
       if (!discardData) {
          copyHostSurface(buffer.master, buffer.active, dim);
       }
+
       buffer.active = buffer.master;
    }
 
@@ -844,6 +858,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
       if (!discardData) {
          copyHostSurface(newMaster, buffer.active, dim);
       }
+
       buffer.active = newMaster;
    }
 
@@ -853,6 +868,7 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
       if (!discardData) {
          copyHostSurface(foundSurface, buffer.active, dim);
       }
+
       buffer.active = foundSurface;
    }
 
@@ -870,13 +886,14 @@ GLDriver::getSurfaceBuffer(ppcaddr_t baseAddress,
    }
 
    // Update the memory bounds to reflect this usage of the texture data
-   auto newMemEnd = buffer.cpuMemStart + getSurfaceBytes(pitch, height, depth, dim, format);
+   auto newMemEnd = buffer.cpuMemStart + getSurfaceBytes(pitch, height, depth, samples, dim, format);
+
    if (newMemEnd > buffer.cpuMemEnd) {
       buffer.cpuMemEnd = newMemEnd;
    }
 
    if (!forWrite && buffer.needUpload) {
-      uploadSurface(&buffer, baseAddress, swizzle, pitch, width, height, depth, dim, format, numFormat, formatComp, degamma, isDepthBuffer, tileMode);
+      uploadSurface(&buffer, baseAddress, swizzle, pitch, width, height, depth, samples, dim, format, numFormat, formatComp, degamma, isDepthBuffer, tileMode);
       buffer.needUpload = false;
    }
 

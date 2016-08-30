@@ -28,9 +28,11 @@ GLDriver::initGL()
 {
    // Clear active state
    mRegisters.fill(0);
+
    for (auto i = 0u; i < mRegisters.size(); ++i) {
       applyRegister(static_cast<latte::Register>(i*4));
    }
+
    mActiveShader = nullptr;
    mDrawBuffers.fill(gl::GL_NONE);
    mGLStateCache.blendEnable.fill(false);
@@ -49,6 +51,7 @@ GLDriver::initGL()
 
    // Create our blit framebuffer
    gl::glCreateFramebuffers(2, mBlitFrameBuffers);
+
    if (decaf::config::gpu::debug) {
       gl::glObjectLabel(gl::GL_FRAMEBUFFER, mBlitFrameBuffers[0], -1, "blit target");
       gl::glObjectLabel(gl::GL_FRAMEBUFFER, mBlitFrameBuffers[1], -1, "blit source");
@@ -61,6 +64,7 @@ GLDriver::initGL()
    // Create framebuffers for color-clear and depth-clear operations
    gl::glCreateFramebuffers(1, &mColorClearFrameBuffer);
    gl::glCreateFramebuffers(1, &mDepthClearFrameBuffer);
+
    if (decaf::config::gpu::debug) {
       gl::glObjectLabel(gl::GL_FRAMEBUFFER, mColorClearFrameBuffer, -1, "color clear");
       gl::glObjectLabel(gl::GL_FRAMEBUFFER, mDepthClearFrameBuffer, -1, "depth clear");
@@ -93,8 +97,10 @@ GLDriver::decafSetBuffer(const pm4::DecafSetBuffer &data)
    gl::glTextureParameteri(chain->object, gl::GL_TEXTURE_WRAP_S, static_cast<int>(gl::GL_CLAMP_TO_EDGE));
    gl::glTextureParameteri(chain->object, gl::GL_TEXTURE_WRAP_T, static_cast<int>(gl::GL_CLAMP_TO_EDGE));
    gl::glTextureStorage2D(chain->object, 1, gl::GL_RGBA8, data.width, data.height);
+
    chain->width = data.width;
    chain->height = data.height;
+
    if (decaf::config::gpu::debug) {
       const char *label = data.isTv ? "TV framebuffer" : "DRC framebuffer";
       gl::glObjectLabel(gl::GL_TEXTURE, chain->object, -1, label);
@@ -124,8 +130,7 @@ enum
 void
 GLDriver::decafCopyColorToScan(const pm4::DecafCopyColorToScan &data)
 {
-   auto cb_color_base = bit_cast<latte::CB_COLORN_BASE>(data.bufferAddr);
-   auto buffer = getColorBuffer(cb_color_base, data.cb_color_size, data.cb_color_info, false);
+   auto buffer = getColorBuffer(data.cb_color_base, data.cb_color_size, data.cb_color_info, false);
    ScanBufferChain *target = nullptr;
 
    if (data.scanTarget == SCANTARGET_TV) {
@@ -154,7 +159,6 @@ GLDriver::decafSwapBuffers(const pm4::DecafSwapBuffers &data)
    static const auto weight = 0.9;
 
    injectFence([=]() {
-
       // TODO: We should have a render chain of 2 buffers so that we don't render stuff
       //  until the game actually asked us to.
 
@@ -178,7 +182,6 @@ void
 GLDriver::decafSetSwapInterval(const pm4::DecafSetSwapInterval &data)
 {
    decaf_assert(data.interval <= 10, fmt::format("Bizarre swap interval {}", data.interval));
-
    mSwapInterval = data.interval;
 }
 
@@ -251,6 +254,7 @@ GLDriver::decafCopySurface(const pm4::DecafCopySurface &data)
       data.dstWidth,
       data.dstHeight,
       data.dstDepth,
+      data.dstSamples,
       data.dstDim,
       data.dstFormat,
       data.dstNumFormat,
@@ -267,6 +271,7 @@ GLDriver::decafCopySurface(const pm4::DecafCopySurface &data)
       data.srcWidth,
       data.srcHeight,
       data.srcDepth,
+      data.srcSamples,
       data.srcDim,
       data.srcFormat,
       data.srcNumFormat,
@@ -336,6 +341,7 @@ GLDriver::surfaceSync(const pm4::SurfaceSync &data)
    if (surfaces) {
       for (auto &i : mSurfaces) {
          SurfaceBuffer *surface = &i.second;
+
          if (surface->cpuMemStart < memEnd && surface->cpuMemEnd > memStart) {
             surface->needUpload |= surface->dirtyMemory;
             surface->dirtyMemory = false;
@@ -346,6 +352,7 @@ GLDriver::surfaceSync(const pm4::SurfaceSync &data)
    if (shaders) {
       for (auto &i : mFetchShaders) {
          Shader *shader = i.second;
+
          if (shader->cpuMemStart < memEnd && shader->cpuMemEnd > memStart) {
             shader->needRebuild |= shader->dirtyMemory;
             shader->dirtyMemory = false;
@@ -354,6 +361,7 @@ GLDriver::surfaceSync(const pm4::SurfaceSync &data)
 
       for (auto &i : mVertexShaders) {
          Shader *shader = i.second;
+
          if (shader->cpuMemStart < memEnd && shader->cpuMemEnd > memStart) {
             shader->needRebuild |= shader->dirtyMemory;
             shader->dirtyMemory = false;
@@ -362,6 +370,7 @@ GLDriver::surfaceSync(const pm4::SurfaceSync &data)
 
       for (auto &i : mPixelShaders) {
          Shader *shader = i.second;
+
          if (shader->cpuMemStart < memEnd && shader->cpuMemEnd > memStart) {
             shader->needRebuild |= shader->dirtyMemory;
             shader->dirtyMemory = false;
@@ -371,14 +380,12 @@ GLDriver::surfaceSync(const pm4::SurfaceSync &data)
 
    for (auto &i : mDataBuffers) {
       DataBuffer *buffer = &i.second;
+
       if (buffer->cpuMemStart < memEnd && buffer->cpuMemEnd > memStart) {
          auto offset = std::max(memStart, buffer->cpuMemStart) - buffer->cpuMemStart;
          auto size = (std::min(memEnd, buffer->cpuMemEnd) - buffer->cpuMemStart) - offset;
 
-         if (buffer->isOutput && shaderExport) {
-            downloadDataBuffer(buffer, offset, size);
-            buffer->dirtyMemory = false;
-         } else if (buffer->isInput && buffer->dirtyMemory && (shaders || surfaces)) {
+         if (buffer->isInput && buffer->dirtyMemory && (shaders || surfaces)) {
             uploadDataBuffer(buffer, offset, size);
             buffer->dirtyMemory = false;
          }
@@ -576,25 +583,26 @@ GLDriver::checkSyncObjects()
       }
 
       auto &wait = mSyncWaits.front();
+
       if (wait.type == SyncWaitType::Fence) {
          gl::GLenum value;
          gl::glGetSynciv(wait.fence, gl::GL_SYNC_STATUS, 4, nullptr, reinterpret_cast<gl::GLint*>(&value));
+
          if (value == gl::GL_UNSIGNALED) {
             break;
          }
 
          wait.func();
-
          glDeleteSync(wait.fence);
       } else if (wait.type == SyncWaitType::Query) {
          gl::GLboolean value;
          gl::glGetQueryObjectuiv(wait.query, gl::GL_QUERY_RESULT_AVAILABLE, reinterpret_cast<gl::GLuint*>(&value));
+
          if (value == gl::GL_FALSE) {
             break;
          }
 
          wait.func();
-
          gl::glDeleteQueries(1, &wait.query);
       } else {
          decaf_abort("GPU thread encountered unknown sync type");
@@ -617,6 +625,42 @@ GLDriver::executeBuffer(pm4::Buffer *buffer)
 
    // Flush the OpenGL command stream
    gl::glFlush();
+}
+
+void
+GLDriver::runOnGLThread(std::function<void()> func)
+{
+   std::unique_lock<std::mutex> lock(mTaskListMutex);
+
+   mTaskList.emplace_back(func);
+   auto taskIterator = mTaskList.end();
+   --taskIterator;
+
+   // Submit a dummy command buffer in case the GPU is idle
+   // (TODO: use a separate wakeup signal shared between command buffers
+   //  and tasks instead of waiting on the command buffer queue directly)
+   static const uint32_t nopPacket = byte_swap(
+      pm4::type2::Header::get(0).type(pm4::Header::Type2).value);
+   pm4::Buffer nopBuffer;
+   nopBuffer.buffer = const_cast<uint32_t *>(&nopPacket);
+   nopBuffer.curSize = sizeof(nopPacket);
+   nopBuffer.maxSize = sizeof(nopPacket);
+   gpu::queueCommandBuffer(&nopBuffer);
+
+   taskIterator->completionCV.wait(lock);
+
+   mTaskList.erase(taskIterator);
+}
+
+void
+GLDriver::runRemoteThreadTasks()
+{
+   std::unique_lock<std::mutex> lock(mTaskListMutex);
+
+   for (auto &i : mTaskList) {
+      i.func();
+      i.completionCV.notify_all();
+   }
 }
 
 void
@@ -672,6 +716,24 @@ void
 GLDriver::notifyGpuFlush(void *ptr,
                          uint32_t size)
 {
+   std::unique_lock<std::mutex> lock(mResourceMutex);
+
+   auto memStart = mem::untranslate(ptr);
+   auto memEnd = memStart + size;
+
+   for (auto &i : mDataBuffers) {
+      DataBuffer *buffer = &i.second;
+      if (buffer->isOutput && buffer->cpuMemStart < memEnd && buffer->cpuMemEnd > memStart) {
+         auto offset = std::max(memStart, buffer->cpuMemStart) - buffer->cpuMemStart;
+         auto size = (std::min(memEnd, buffer->cpuMemEnd) - buffer->cpuMemStart) - offset;
+
+         runOnGLThread([=](){
+            downloadDataBuffer(buffer, offset, size);
+         });
+
+         buffer->dirtyMemory = false;
+      }
+   }
 }
 
 void
@@ -684,11 +746,12 @@ GLDriver::syncPoll(const SwapFunction &swapFunc)
 
    mSwapFunc = swapFunc;
 
-   if (auto buffer = gpu::tryUnqueueCommandBuffer()) {
+   while (auto buffer = gpu::tryUnqueueCommandBuffer()) {
       executeBuffer(buffer);
-   } else {
       checkSyncObjects();
    }
+
+   checkSyncObjects();
 }
 
 void
@@ -703,6 +766,7 @@ GLDriver::run()
 
    while (mRunState == RunState::Running) {
       pm4::Buffer *buffer;
+
       if (mSyncWaits.size() == 0) {
          buffer = gpu::unqueueCommandBuffer();
       } else {

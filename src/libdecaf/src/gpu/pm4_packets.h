@@ -41,8 +41,8 @@ struct DecafCopyColorToScan
    static const auto Opcode = type3::DECAF_COPY_COLOR_TO_SCAN;
 
    uint32_t scanTarget;
-   uint32_t bufferAddr;
-   uint32_t aaBufferAddr;
+   latte::CB_COLORN_BASE cb_color_base;
+   latte::CB_COLORN_FRAG cb_color_frag;
    uint32_t width;
    uint32_t height;
    latte::CB_COLORN_SIZE cb_color_size;
@@ -54,8 +54,8 @@ struct DecafCopyColorToScan
    void serialise(Serialiser &se)
    {
       se(scanTarget);
-      se(bufferAddr);
-      se(aaBufferAddr);
+      se(cb_color_base.value);
+      se(cb_color_frag.value);
       se(width);
       se(height);
       se(cb_color_size.value);
@@ -73,8 +73,8 @@ struct DecafClearColor
    float green;
    float blue;
    float alpha;
-   uint32_t bufferAddr;
-   uint32_t aaBufferAddr;
+   latte::CB_COLORN_BASE cb_color_base;
+   latte::CB_COLORN_FRAG cb_color_frag;
    latte::CB_COLORN_SIZE cb_color_size;
    latte::CB_COLORN_INFO cb_color_info;
    latte::CB_COLORN_VIEW cb_color_view;
@@ -87,8 +87,8 @@ struct DecafClearColor
       se(green);
       se(blue);
       se(alpha);
-      se(bufferAddr);
-      se(aaBufferAddr);
+      se(cb_color_base.value);
+      se(cb_color_frag.value);
       se(cb_color_size.value);
       se(cb_color_info.value);
       se(cb_color_view.value);
@@ -101,9 +101,9 @@ struct DecafClearDepthStencil
    static const auto Opcode = type3::DECAF_CLEAR_DEPTH_STENCIL;
 
    uint32_t flags;
-   uint32_t bufferAddr;
+   latte::DB_DEPTH_BASE db_depth_base;
+   latte::DB_DEPTH_HTILE_DATA_BASE db_depth_htile_data_base;
    latte::DB_DEPTH_INFO db_depth_info;
-   uint32_t hiZAddr;
    latte::DB_DEPTH_SIZE db_depth_size;
    latte::DB_DEPTH_VIEW db_depth_view;
 
@@ -111,9 +111,9 @@ struct DecafClearDepthStencil
    void serialise(Serialiser &se)
    {
       se(flags);
-      se(bufferAddr);
+      se(db_depth_base.value);
+      se(db_depth_htile_data_base.value);
       se(db_depth_info.value);
-      se(hiZAddr);
       se(db_depth_size.value);
       se(db_depth_view.value);
    }
@@ -180,6 +180,7 @@ struct DecafCopySurface
    uint32_t dstWidth;
    uint32_t dstHeight;
    uint32_t dstDepth;
+   uint32_t dstSamples;
    latte::SQ_TEX_DIM dstDim;
    latte::SQ_DATA_FORMAT dstFormat;
    latte::SQ_NUM_FORMAT dstNumFormat;
@@ -195,6 +196,7 @@ struct DecafCopySurface
    uint32_t srcWidth;
    uint32_t srcHeight;
    uint32_t srcDepth;
+   uint32_t srcSamples;
    latte::SQ_TEX_DIM srcDim;
    latte::SQ_DATA_FORMAT srcFormat;
    latte::SQ_NUM_FORMAT srcNumFormat;
@@ -213,6 +215,7 @@ struct DecafCopySurface
       se(dstWidth);
       se(dstHeight);
       se(dstDepth);
+      se(dstSamples);
       se(dstDim);
       se(dstFormat);
       se(dstNumFormat);
@@ -228,6 +231,7 @@ struct DecafCopySurface
       se(srcWidth);
       se(srcHeight);
       se(srcDepth);
+      se(srcSamples);
       se(srcDim);
       se(srcFormat);
       se(srcNumFormat);
@@ -291,8 +295,8 @@ struct DrawIndexImmd
    }
 };
 
-// This structure should only be used to WRITE 16 bit big endian indices
-struct DrawIndexImmdWriteOnly16BE
+// This structure should only be used to WRITE 16 bit little endian indices
+struct DrawIndexImmdWriteOnly16LE
 {
    static const auto Opcode = type3::DRAW_INDEX_IMMD;
 
@@ -307,10 +311,15 @@ struct DrawIndexImmdWriteOnly16BE
       se(drawInitiator);
 
       // Hack in a custom write!
-      for (auto i = 0u; i > indices.size(); i += 2) {
+      for (auto i = 0u; i < indices.size(); i += 2) {
          auto index0 = static_cast<uint32_t>(indices[i + 0]);
-         auto index1 = static_cast<uint32_t>(indices[i + 1]);
-         auto word = (index1 >> 16) | (index0 << 16);
+         auto index1 = uint32_t { 0 };
+
+         if (i + 1 < indices.size()) {
+            index1 = indices[i + 1];
+         }
+
+         auto word = static_cast<uint32_t>(index1 | (index0 << 16));
          se(word);
       }
    }
